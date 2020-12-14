@@ -16,6 +16,9 @@ let cart = new Map();
 let purchased = new Map();
 let messages = new Map();
 let shipped = new Map();
+let review = new Map();
+let reviewed = new Map();
+let selling = new Map();
 
 let userToken = 0;
 let counter = 0;
@@ -132,6 +135,23 @@ app.post("/create-listing", (req, res) => {
       buyerUsername: undefined
     });
     res.send(JSON.stringify({ success: true, listingId: listingId }));
+
+    if (!selling.has(seller))
+      selling.set(seller, [
+        {
+          price: price,
+          description: description,
+          sellerUsername: seller,
+          itemId: listingId
+        }
+      ]);
+    else
+      selling.get(seller).push({
+        price: price,
+        description: description,
+        sellerUsername: seller,
+        itemId: listingId
+      });
   }
 });
 
@@ -338,7 +358,9 @@ app.post("/chat-messages", (req, res) => {
   if (!loggedUsers.has(userToken))
     res.send(JSON.stringify({ success: false, reason: "Invalid token" }));
   else if (destination === undefined)
-    JSON.stringify({ success: false, reason: "destination field missing" });
+    res.send(
+      JSON.stringify({ success: false, reason: "destination field missing" })
+    );
   else if (!userLogin.has(destination))
     res.send(
       JSON.stringify({
@@ -369,13 +391,20 @@ app.post("/ship", (req, res) => {
   let userGiven = loggedUsers.get(userToken);
 
   if (listing.get(listingId)["buyerUsername"] === undefined)
-    JSON.stringify({ success: false, reason: "Item was not sold" });
+    res.send(JSON.stringify({ success: false, reason: "Item was not sold" }));
   else if (shipped.has(listingId))
-    JSON.stringify({ success: false, reason: "Item has already shipped" });
+    res.send(
+      JSON.stringify({ success: false, reason: "Item has already shipped" })
+    );
   else if (listing.get(listingId)["sellerUsername"] !== userGiven)
-    JSON.stringify({ success: false, reason: "User is not selling that item" });
+    res.send(
+      JSON.stringify({
+        success: false,
+        reason: "User is not selling that item"
+      })
+    );
   else {
-    shipped.set(userGiven, listingId);
+    shipped.set(listingId, userGiven);
     res.send(JSON.stringify({ success: true }));
   }
 });
@@ -383,11 +412,85 @@ app.post("/ship", (req, res) => {
 app.get("/status", (req, res) => {
   let listingId = req.query.itemid;
   if (listing.get(listingId)["buyerUsername"] === undefined)
-    JSON.stringify({ success: false, status: "Item not sold" });
+    res.send(JSON.stringify({ success: false, reason: "Item not sold" }));
   else if (!shipped.has(listingId))
-    JSON.stringify({ success: false, status: "not-shipped" });
+    res.send(JSON.stringify({ success: true, status: "not-shipped" }));
   else {
     res.send(JSON.stringify({ success: true, status: "shipped" }));
+  }
+});
+
+app.post("/review-seller", (req, res) => {
+  let userToken = req.headers["token"];
+  let userGiven = loggedUsers.get(userToken);
+
+  let parsedBody = undefined;
+  try {
+    parsedBody = JSON.parse(req.body);
+  } catch {
+    parsedBody = {};
+  }
+
+  let numStars = parsedBody.numStars;
+  let contents = parsedBody.contents;
+  let itemid = parsedBody.itemid;
+  let seller = listing.get(itemid)["sellerUsername"];
+
+  if (!loggedUsers.has(userToken))
+    res.send(JSON.stringify({ success: false, reason: "Invalid token" }));
+  else if (listing.get(itemid)["buyerUsername"] !== userGiven)
+    res.send(
+      JSON.stringify({
+        success: false,
+        reason: "User has not purchased this item"
+      })
+    );
+  else if (reviewed.has(itemid))
+    res.send(
+      JSON.stringify({
+        success: false,
+        reason: "This transaction was already reviewed"
+      })
+    );
+  else {
+    if (!review.has(seller))
+      review.set(seller, [
+        {
+          from: userGiven,
+          numStars: numStars,
+          contents: contents
+        }
+      ]);
+    else
+      review.get(seller).push({
+        from: userGiven,
+        numStars: numStars,
+        contents: contents
+      });
+
+    reviewed.set(itemid, userGiven);
+    res.send(JSON.stringify({ success: true }));
+  }
+});
+
+app.get("/reviews", (req, res) => {
+  let sellerUsername = req.query.sellerUsername;
+
+  res.send(
+    JSON.stringify({ success: true, reviews: review.get(sellerUsername) })
+  );
+});
+
+app.get("/selling", (req, res) => {
+  let sellerUsername = req.query.sellerUsername;
+
+  if (sellerUsername=== undefined)
+    res.send(JSON.stringify({ success: false, reason: "sellerUsername field missing" }));
+  
+  else {
+  res.send(
+    JSON.stringify({ success: true, selling: selling.get(sellerUsername) })
+  );
   }
 });
 
